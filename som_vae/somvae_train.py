@@ -33,6 +33,8 @@ from sacred.stflow import LogFileWriter
 from somvae_model import SOMVAE
 from utils import *
 
+# tf.enable_eager_execution()
+
 ex = sacred.Experiment("hyperopt")
 ex.observers.append(sacred.observers.FileStorageObserver.create("../sacred_runs"))
 ex.captured_out_filter = sacred.utils.apply_backspaces_and_linefeeds
@@ -301,11 +303,18 @@ def main(latent_dim, som_dim, learning_rate, decay_factor, alpha, beta, gamma, t
         dict: Results of the evaluation (NMI, Purity, MSE).
     """
     # Dimensions for MNIST-like data
-    input_length = 28
-    input_channels = 28
-    x = tf.placeholder(tf.float32, shape=[None, 28, 28, 1])
+    input_length = 2000  # previously 28
+    input_channels = 75  # previously 28
+    x = tf.placeholder(tf.float32, shape=[None, input_length, input_channels])  # (?, 2000, 75)
 
-    data_generator = get_data_generator()
+    from loaders import PhenotypeLoader
+    loader = PhenotypeLoader()
+    def _generator(mode, batches):
+        g = loader.train_generator() if mode == "train" else loader.val_generator()
+        while True:
+            (X, y) = next(g)
+            yield X
+    data_generator = _generator  # previously get_data_generator()
 
     lr_val = tf.placeholder_with_default(learning_rate, [])
 
@@ -313,7 +322,7 @@ def main(latent_dim, som_dim, learning_rate, decay_factor, alpha, beta, gamma, t
             input_length=input_length, input_channels=input_channels, alpha=alpha, beta=beta, gamma=gamma,
             tau=tau, mnist=mnist)
 
-    train_model(model, x, lr_val, generator=data_generator)
+    train_model(model, x, lr_val, generator=_generator)
 
     result = evaluate_model(model, x)
 

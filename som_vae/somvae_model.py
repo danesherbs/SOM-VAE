@@ -202,9 +202,13 @@ class SOMVAE:
         """Computes the latent encodings of the inputs."""
         if not self.mnist:
             with tf.variable_scope("encoder"):
-                h_1 = tf.keras.layers.Dense(256, activation="relu")(self.inputs)
-                h_2 = tf.keras.layers.Dense(128, activation="relu")(h_1)
-                z_e = tf.keras.layers.Dense(self.latent_dim, activation="relu")(h_2)
+                h_1 = tf.keras.layers.Conv1D(128, 4, padding='same', input_shape=(2000, 75))(self.inputs)  # (?, 2000, 75) -> (?, 2000, 128)
+                h_2 = tf.keras.layers.MaxPooling1D(pool_size=2)(h_1)  # (?, 2000, 128) -> (?, 1000, 128)
+                h_3 = tf.keras.layers.Conv1D(128, 4, padding='same')(h_2)  # (?, 1000, 128) -> (?, 1000, 128)
+                h_4 = tf.keras.layers.MaxPooling1D(pool_size=2)(h_3)  # (?, 1000, 128) -> (?, 500, 128)
+                h_5 = tf.keras.layers.Reshape((-1, 500*128))(h_4)  # (?, 500, 128) -> (?, 500*128)
+                h_6 = tf.keras.layers.Dense(self.latent_dim)(h_5)  # (?, 500*128) -> (?, 64)
+                z_e = h_6
         else:
             with tf.variable_scope("encoder"):
                 h_conv1 = tf.nn.relu(conv2d(self.inputs, [4,4,1,256], "conv1"))
@@ -227,6 +231,7 @@ class SOMVAE:
     @lazy_scope
     def z_dist_flat(self):
         """Computes the distances between the encodings and the embeddings."""
+        # z_dist arg shapes: (?, 1, 1, 64) and (1, 8, 8, 64)
         z_dist = tf.squared_difference(tf.expand_dims(tf.expand_dims(self.z_e, 1), 1), tf.expand_dims(self.embeddings, 0))
         z_dist_red = tf.reduce_sum(z_dist, axis=-1)
         z_dist_flat = tf.reshape(z_dist_red, [self.batch_size, -1])
@@ -286,9 +291,13 @@ class SOMVAE:
         """Reconstructs the input from the embeddings."""
         if not self.mnist:
             with tf.variable_scope("decoder", reuse=tf.AUTO_REUSE):
-                h_3 = tf.keras.layers.Dense(128, activation="relu")(self.z_q)
-                h_4 = tf.keras.layers.Dense(256, activation="relu")(h_3)
-                x_hat = tf.keras.layers.Dense(self.input_channels, activation="sigmoid")(h_4)
+                h_1 = tf.keras.layers.Dense(500*128)(self.z_q)  # (?, 64) -> (?, 500*128)
+                h_2 = tf.keras.layers.Reshape((500, 128))(h_1)  # (?, 500*128) -> (?, 500, 128)
+                h_3 = tf.keras.layers.UpSampling1D(size=2)(h_2)  # (?, 500, 128) -> (?, 1000, 128)
+                h_4 = tf.keras.layers.Conv1D(128, 4, padding='same')(h_3)  # (?, 1000, 128) -> (?, 1000, 128)
+                h_5 = tf.keras.layers.UpSampling1D(size=2)(h_4)  # (?, 1000, 128) -> (?, 2000, 128)
+                h_6 = tf.keras.layers.Conv1D(75, 4, padding='same')(h_5)  # (?, 2000, 128) -> (?, 2000, 75)
+                x_hat = h_6
         else:
             with tf.variable_scope("decoder", reuse=tf.AUTO_REUSE):
                 flat_size = 7*7*256
@@ -307,9 +316,21 @@ class SOMVAE:
         """Reconstructs the input from the encodings."""
         if not self.mnist:
             with tf.variable_scope("decoder", reuse=tf.AUTO_REUSE):
-                h_3 = tf.keras.layers.Dense(128, activation="relu")(self.z_e)
-                h_4 = tf.keras.layers.Dense(256, activation="relu")(h_3)
-                x_hat = tf.keras.layers.Dense(self.input_channels, activation="sigmoid")(h_4)
+                # Forward pass
+                # h_1 = tf.keras.layers.Conv1D(128, 4, padding='same', input_shape=(2000, 75))(self.inputs)  # (?, 2000, 75) -> (?, 2000, 128)
+                # h_2 = tf.keras.layers.MaxPooling1D(pool_size=2)(h_1)  # (?, 2000, 128) -> (?, 1000, 128)
+                # h_3 = tf.keras.layers.Conv1D(128, 4, padding='same')(h_2)  # (?, 1000, 128) -> (?, 1000, 128)
+                # h_4 = tf.keras.layers.MaxPooling1D(pool_size=2)(h_3)  # (?, 1000, 128) -> (?, 500, 128)
+                # h_5 = tf.keras.layers.Reshape((-1, 500*128))(h_4)  # (?, 500, 128) -> (?, 500*128)
+                # h_6 = tf.keras.layers.Dense(self.latent_dim)(h_5)  # (?, 500*128) -> (?, 64)
+
+                h_1 = tf.keras.layers.Dense(500*128)(self.z_e)  # (?, 64) -> (?, 500*128)
+                h_2 = tf.keras.layers.Reshape((500, 128))(h_1)  # (?, 500*128) -> (?, 500, 128)
+                h_3 = tf.keras.layers.UpSampling1D(size=2)(h_2)  # (?, 500, 128) -> (?, 1000, 128)
+                h_4 = tf.keras.layers.Conv1D(128, 4, padding='same')(h_3)  # (?, 1000, 128) -> (?, 1000, 128)
+                h_5 = tf.keras.layers.UpSampling1D(size=2)(h_4)  # (?, 1000, 128) -> (?, 2000, 128)
+                h_6 = tf.keras.layers.Conv1D(75, 4, padding='same')(h_5)  # (?, 2000, 128) -> (?, 2000, 75)
+                x_hat = h_6
         else:
             with tf.variable_scope("decoder", reuse=tf.AUTO_REUSE):
                 flat_size = 7*7*256
