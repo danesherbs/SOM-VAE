@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: silly-ubuntu
+  namespace: health-transformer
+spec:
+  containers:
+  - name: silly-ubuntu
+    image: ubuntu:latest
+    resources:
+      requests:
+        memory: "16000Mi"
+        cpu: "35000m"
+    # Just spin & wait forever
+    command: [ "/bin/bash", "-c", "--" ]
+    args: [ "while true; do sleep 30; done;" ]
+    volumeMounts:
+    - mountPath: /mnt
+      name: efs-test-storage
+  volumes:
+  - name: efs-test-storage
+    persistentVolumeClaim:
+      claimName: efs

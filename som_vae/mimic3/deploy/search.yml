@@ -1,0 +1,99 @@
+apiVersion: "kubeflow.org/v1alpha1"
+kind: StudyJob
+metadata:
+  namespace: health-transformer # CHANGE ME
+  labels:
+    controller-tools.k8s.io: "1.0"
+  name: sleepy-search
+spec:
+  studyName: sleepy-search
+  owner: crd
+  optimizationtype: maximize
+  objectivevaluename: magic_metric
+  optimizationgoal: 0.99
+  requestcount: 1  # Amount of runs
+  suggestionSpec:
+    suggestionAlgorithm: "grid"
+    requestNumber: 1  # Amount of jobs per run
+    suggestionParameters:
+      - name: "DefaultGrid"
+        value: "1"
+      - name: "--dim"
+        value: "3"
+      - name: "--dropout"
+        value: "3"
+      - name: "--heads"
+        value: "3"
+  metricsnames:
+    - magic_metric
+  parameterconfigs:
+    - name: --dim
+      parametertype: categorical
+      feasible:
+        list:
+        - "256"
+        - "128"
+        - "64"
+    - name: --dropout
+      parametertype: categorical
+      feasible:
+        list:
+        - "0.0"
+        - "0.3"
+        - "0.5"
+    - name: --heads
+      parametertype: categorical
+      feasible:
+        list:
+        - "1"
+        - "4"
+        - "8"
+  workerSpec:
+    goTemplate:
+        rawTemplate: |-
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: {{.WorkerID}}
+            namespace: health-transformer # CHANGE ME
+          spec:
+            template:
+              spec:
+                nodeSelector:
+                  accelerator: nvidia-tesla-v100
+                tolerations:
+                - key: "nvidia.com/gpu"
+                  operator: "Equal"
+                  value: "true"
+                  effect: "NoSchedule"
+                imagePullPolicy: Always
+                imagePullSecrets:
+                - name: babylonhealth-deploy-pull-secret
+                containers:
+                - name: {{.WorkerID}}
+                  image: quay.io/babylonhealth/ml-kubeflow:health-transformer-3854d95e9a40e93bd7534ed2bdb216f79f7be2df
+                  resources:
+                    requests:
+                      nvidia.com/gpu: 1
+                      memory: "60800Mi"
+                      cpu: "7500m"
+                    limits:
+                      nvidia.com/gpu: 1
+                      memory: "60800Mi"
+                      cpu: "7500m"
+                  volumeMounts:
+                  - mountPath: /mnt
+                    name: efs-storage
+                  command:
+                  - "python"
+                  - "run.py"
+                  {{- with .HyperParameters}}
+                  {{- range .}}
+                  - "{{.Name}}={{.Value}}"
+                  {{- end}}
+                  {{- end}}
+                restartPolicy: Never
+                volumes:
+                - name: efs-storage
+                  persistentVolumeClaim:
+                    claimName: efs
